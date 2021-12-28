@@ -1,64 +1,50 @@
 
 #include <Adafruit_DotStar.h>
 #include <Adafruit_NeoPixel.h>
-#include <Bounce2.h>
+//#include <Bounce2.h>
+#include "samd21timerirq.h"
+#include "startupanimation.h"
 
 // onboard DotStar -- debug
-const int DATA_PIN = 7;
-const int CLK_PIN = 8;
-Adafruit_DotStar dspixel (1,DATA_PIN,CLK_PIN,DOTSTAR_BGR);
+Adafruit_DotStar dspixel (1,INTERNAL_DS_DATA,INTERNAL_DS_CLK,DOTSTAR_BGR);
 
 // mode button
 const int MODE_BUTTON_PIN = 0;
-Bounce2::Button mode_button = Bounce2::Button();
+//Bounce2::Button mode_button = Bounce2::Button();
+
+bool button_state = false;
 
 // NeoPixel strip
 const int NEOPIX_RIGHT_PIN = 3;
 const int NEOPIX_LEFT_PIN = 4;
 const int NUM_PIX = 12;
 Adafruit_NeoPixel pixels_right(NUM_PIX, NEOPIX_RIGHT_PIN, NEO_GRBW + NEO_KHZ800);
-const uint32_t color_wheel[] = {
-  0x00ff0000,
-  0x00ff8000,
-  0x00ffff00,
-  0x0080ff00,
-  0x0000ff00,
-  0x0000ff80,
-  0x0000ffff,
-  0x000080ff,
-  0x000000ff,
-  0x008000ff,
-  0x00ff00ff,
-  0x00ff0080};
-int ndx_color = 0;
-const int num_color = 12;
-
-int lit_pix = 0;
 
 // PIR
 const int PIR_PIN = 2;
 int pir_state = LOW;
 int pir_val = 0;
 
-
-void draw_test()
+// timer
+hw_timer_t frame_timer;
+volatile bool frame_event;
+void TC5_Handler() 
 {
-  pixels_right.clear();
-  for (int i = 0; i <= lit_pix; ++i) {
-    pixels_right.setPixelColor(i,color_wheel[ndx_color]);
-  }
-  pixels_right.show();
+  frame_event = true;
+  tcClearIrq(frame_timer);
 }
 
+StartupAnimation ani0(pixels_right);
 
 void setup() {
   Serial.begin(115200);
 
   pinMode(PIR_PIN, INPUT_PULLUP);
+  pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
 
-  mode_button.attach( MODE_BUTTON_PIN ,  INPUT_PULLUP ); // Use internal pull-up
-  mode_button.interval(20); 
-  mode_button.setPressedState(LOW); // pressed when low (short to ground)
+//  mode_button.attach( MODE_BUTTON_PIN ,  INPUT_PULLUP ); // Use internal pull-up
+//  mode_button.interval(5); 
+//  mode_button.setPressedState(LOW); // pressed when low (short to ground)
 
   pixels_right.begin();
   pixels_right.show();
@@ -66,9 +52,25 @@ void setup() {
 
   dspixel.begin();
   dspixel.show();
+
+  frame_timer = tcCreate(5,33333,false); // 30FPS
+  if (!tcConfigure(frame_timer)) {
+    dspixel.setPixelColor(0, 64, 0, 0);
+    dspixel.show();
+    while(1);
+  }
+
+  tcStartCounter(frame_timer);
 }
 
-void loop() {
+bool is_pressed = false;
+int pressed_start = -1;
+int released_start = -1;
+bool is_released = true;
+int debounce_time_ms = 20;
+
+void loop() 
+{
 //  pir_val = digitalRead(PIR_PIN);
 //  if (pir_val == HIGH) {
 //    if (pir_state == LOW) { //edge
@@ -85,17 +87,49 @@ void loop() {
 //      pir_state = LOW;
 //    }
 //  }
-    
-  mode_button.update();
-  if (mode_button.pressed()) {
-    ndx_color = (ndx_color + 1) % num_color;
-    Serial.printf("ndx_color=%d\n",ndx_color);
+
+  int const pin_val = digitalRead(MODE_BUTTON_PIN);
+  if (is_released && (pin_val == 0)) {
+    if (pressed_start < 0) {
+      pressed_start = millis();
+    } else if (!is_pressed && (millis() - pressed_start > debounce_time_ms)) {
+      is_pressed = true; 
+      is_released = false;  
+      pressed_start = -1;
+
+      // do stuff
+      button_state = !button_state;
+      dspixel.setPixelColor(0, 0, button_state ? 64 : 0, 0);
+      dspixel.show();
+      if (!ani0.is_playing()) {
+        ani0.reset();
+      }
+    }
+  } else if (is_pressed && (pin_val == 1)) {  // releasing?
+    if (released_start < 0) {
+      released_start = millis();
+    } else if (!is_released && (millis() - released_start > debounce_time_ms)) {
+      is_released = true;   
+      released_start = -1;
+      is_pressed = false;
+    }
   }
 
-  draw_test();
-  lit_pix = (lit_pix + 1) % NUM_PIX;
-  delay(500);
+//  mode_button.update();
+//  if (mode_button.pressed()) {
+//    button_state = !button_state;
+//    dspixel.setPixelColor(0, 0, button_state ? 64 : 0, 0);
+//    dspixel.show();
+//    if (!ani0.is_playing()) {
+//      ani0.reset();
+//    }
+//  }
 
-  
+  if (frame_event) {
+    ani0.tick();
+    frame_event = false;
+  }
+
 }
+
   
