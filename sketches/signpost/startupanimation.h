@@ -6,7 +6,7 @@
 class StartupAnimation : public Animation
 {
 public:
-  StartupAnimation(Adafruit_NeoPixel& strip);
+  StartupAnimation(Adafruit_NeoPixel& strip_l, Adafruit_NeoPixel& strip_r);
 
 private:
   static int const _ani[];

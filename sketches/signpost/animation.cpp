@@ -8,7 +8,7 @@ uint32_t const Animation::color_wheel[] = {
   0x00ffff00,
   0x0080ff00,
   0x0000ff00,
-  0x0000ff80,
+  0x0000ff40,
   0x0000ffff,
   0x000080ff,
   0x000000ff,
@@ -20,17 +20,22 @@ int const Animation::num_colors = 14;
 
 
 
-Animation::Animation(Adafruit_NeoPixel& strip) 
-: _strip(strip), _frame_data(nullptr), _num_frames(0), 
+Animation::Animation(Adafruit_NeoPixel& strip_l, Adafruit_NeoPixel& strip_r) 
+: _strip_left(strip_l), _strip_right(strip_r), _frame_data(nullptr), _num_frames(0), 
   _px_per_frame(0), _cur_frame_remain(0), _ndx_cur_frame(0)
 {
 
   
 }
 
-bool Animation::is_playing()
+bool Animation::is_playing() const
 {
   return !((_cur_frame_remain == 0) && (_ndx_cur_frame >= _num_frames));
+}
+
+bool Animation::interruptable() const
+{
+  return false;
 }
 
 bool Animation::tick() 
@@ -46,13 +51,19 @@ bool Animation::tick()
     _cur_frame_remain = _frame_data[_ndx_cur_frame*(_px_per_frame+1)];  // first entry in a row is the display time
   }
   
-  _strip.clear();
+  _strip_left.clear();
+  _strip_right.clear();
   for (int i = 0; i < _px_per_frame; ++i) {
     int const ndx = _frame_data[_ndx_cur_frame*(_px_per_frame+1) + i + 1];
-    _strip.setPixelColor(i, color_wheel[ndx]);
+    if (i < 12) {
+      _strip_left.setPixelColor(i, color_wheel[ndx]);
+    } else {
+      _strip_right.setPixelColor(i-12, color_wheel[ndx]);
+    }
   }
   _cur_frame_remain -= 1;
-  _strip.show();
+  _strip_left.show();
+  _strip_right.show();
 
   return true;
 }
