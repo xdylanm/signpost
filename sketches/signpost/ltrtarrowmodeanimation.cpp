@@ -21,11 +21,11 @@ void LtRtArrowModeAnimation::reset(int t0, int t1, int t2, int t3)
   }
 }
 
-// blinks 15:"< >", 5:" ", 15:"< >", 5:" "
+// blinks 13:"< >", 13" ", 13:"< >", 1:" "
 void LtRtArrowModeAnimation::set_random()
 {
   
-  reset(15,5,15,5);
+  reset(13,13,13,1);
   for (int frame = 0; frame < 3; frame += 2) {
     for (int i = 0; i < 12; ++i) {
       _ani[frame*25 + 1 + i] = _ani_small_arrow[i];

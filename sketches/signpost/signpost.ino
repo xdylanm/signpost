@@ -48,6 +48,8 @@ void TC5_Handler()
   tcClearIrq(frame_timer);
 }
 int const period_ms = 20;  // 50FPS
+int const timer_go_delay_ms = 3000;
+int timer_go_count = -1;
 int timer_timeout_count = -1;
 int timer_timeout_count_start = -1;
 
@@ -57,6 +59,38 @@ StartupAnimation ani0(pixels_left, pixels_right);
 ArrowAnimation ani_arrow(pixels_left, pixels_right);
 LtRtArrowModeAnimation ani_arrow_lr_mode(pixels_left, pixels_right);
 TimerModeAnimation ani_timer_mode(pixels_left, pixels_right);
+
+void set_random_arrow_active()
+{
+  ani_arrow.reset();
+  if (random_bits_left <= 0) {
+    random_bits = random((1<<16));
+    random_bits_left = 16;
+  }
+  if (random_bits & 0x0001) {
+    ani_arrow.set_left_only();
+  } else {
+    ani_arrow.set_right_only();
+  }
+  random_bits >>= 1;
+  random_bits_left--;
+  active_ani = &ani_arrow;
+}
+
+void set_timer_mode(int tens, int units)
+{
+  ani_timer_mode.set_display(tens,units);
+  active_ani = &ani_timer_mode;
+  timer_go_count = timer_go_delay_ms/period_ms;
+  timer_timeout_count_start = (1000*(10*tens + units))/period_ms;
+  timer_timeout_count = timer_timeout_count_start;
+}
+
+void clear_timer_mode()
+{
+  timer_timeout_count = -1;
+  timer_go_count = -1; 
+}
 
 void setup() {
   Serial.begin(115200);
@@ -95,20 +129,10 @@ void loop()
     dspixel.setPixelColor(0, 0, 0, 64);
     dspixel.show();
     if (!active_ani) {
-      ani_arrow.reset();
       if (op_mode == RANDOM_LEFT_RIGHT) {
-        if (random_bits_left == 0) {
-          random_bits = random((1<<16));
-        }
-        if (random_bits & 0x0001) {
-          ani_arrow.set_left_only();
-        } else {
-          ani_arrow.set_right_only();
-        }
-        random_bits >>= 1;
-        random_bits_left--;
-        active_ani = &ani_arrow;
+        set_random_arrow_active();
       } else if (op_mode == ALTERNATE_LEFT_RIGHT) {
+        ani_arrow.reset();
         ani_arrow.toggle();
         active_ani = &ani_arrow;
       }
@@ -129,39 +153,27 @@ void loop()
       }
       switch(op_mode) {
         case RANDOM_LEFT_RIGHT:
+          clear_timer_mode();
           ani_arrow_lr_mode.set_random();
           active_ani = &ani_arrow_lr_mode;
-          timer_timeout_count = -1;
           random_bits_left = 0;
           break;
         case ALTERNATE_LEFT_RIGHT:
+          clear_timer_mode();
           ani_arrow_lr_mode.set_alternate();
           active_ani = &ani_arrow_lr_mode;
-          timer_timeout_count = -1;
           break;
         case TIMER_5S:
-          ani_timer_mode.set_display(0,5);
-          active_ani = &ani_timer_mode;
-          timer_timeout_count_start = 5000/period_ms;
-          timer_timeout_count = timer_timeout_count_start;
+          set_timer_mode(0,5);
           break;
         case TIMER_10S:
-          ani_timer_mode.set_display(1,0);
-          active_ani = &ani_timer_mode;
-          timer_timeout_count_start = 10000/period_ms;
-          timer_timeout_count = timer_timeout_count_start;
+          set_timer_mode(1,0);
           break;
         case TIMER_15S:
-          ani_timer_mode.set_display(1,5);
-          active_ani = &ani_timer_mode;
-          timer_timeout_count_start = 15000/period_ms;
-          timer_timeout_count = timer_timeout_count_start;
+          set_timer_mode(1,5);
           break;
         case TIMER_30S:
-          ani_timer_mode.set_display(3,0);
-          active_ani = &ani_timer_mode;
-          timer_timeout_count_start = 30000/period_ms;
-          timer_timeout_count = timer_timeout_count_start;
+          set_timer_mode(3,0);
           break;
         default:
           break;
@@ -170,14 +182,23 @@ void loop()
   }
 
   if (frame_event) {
-    if (timer_timeout_count > 0) {
-      timer_timeout_count--;
-    } else if (timer_timeout_count == 0) {
-      timer_timeout_count = timer_timeout_count_start;
+    
+    if (timer_go_count > 0) {          // waiting for "go"
+      timer_go_count--;
+    } else if (timer_go_count == 0) {  // "go"
       if (!active_ani) {
         ani_arrow.reset();
         ani_arrow.set_both();
         active_ani = &ani_arrow;
+        timer_go_count = -1;  // wait for reset
+      }
+    } else {                          // "go" signal complete (timer_go_count == -1)
+      if (timer_timeout_count > 0) {  // count down to left/right
+        timer_timeout_count--;
+      } else if ((timer_timeout_count == 0) && (!active_ani)) {       // signal left or right
+        set_random_arrow_active();
+        timer_timeout_count = timer_timeout_count_start;
+        timer_go_count = timer_go_delay_ms/period_ms;
       }
     }
     
